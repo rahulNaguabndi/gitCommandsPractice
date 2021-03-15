@@ -1,0 +1,59 @@
+image: us.gcr.io/mshn-corp-154420/build/node-js:12.11.1-18.04
+
+stages:
+  - lint-helm-chart
+  - publish-helm-chart
+  - build
+  - audit
+  - lint
+  - test
+  - publish
+  - deploy
+
+variables:
+  REACT_APP_BASE_URL_PREFIX: "/"
+  REGISTRY: "us.gcr.io/mshn-prod-providence"
+  GC_PROJECT_ID: "mshn-prod-providence"
+  K8S_CLUSTER_NAME: "reporting"
+  K8S_CLUSTER_LOCATION: "--zone us-central1-a"
+  APP_NAME: "horizon"
+  K8S_NAMESPACE: "parallax"
+  HELM_VALUES: "--set appImageTag=master"
+
+before_script:
+  - login_to_docker_registry
+  - yarn install
+
+audit:
+  stage: audit
+  script:
+    - yarn audit --audit-level=moderate
+
+lint:
+  stage: lint
+  script:
+    - yarn check-lint
+    - yarn check-format
+
+unit_test:
+  variables:
+    NODE_ENV: "development"
+  stage: test
+  script:
+    - yarn install
+    - yarn test --coverage
+  coverage: '/All files[^|]*\|[^|]*\s+([\d\.]+)/'
+
+build_image:
+  stage: publish
+  script:
+    - yarn install
+    - yarn run build
+    - docker build -t $REGISTRY/$K8S_NAMESPACE/$APP_NAME:$CI_COMMIT_REF_SLUG .
+    - docker push $REGISTRY/$K8S_NAMESPACE/$APP_NAME:$CI_COMMIT_REF_SLUG
+
+include:
+  - project: "build/gitlab-templates"
+    file: "helm/build-helm-chart-on-tags.yml"
+  - project: "build/gitlab-templates"
+    file: "helm/deploy-manual-on-master.yml"
